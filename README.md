@@ -1,4 +1,4 @@
-# EirenaeusPhilalethes V.1
+# Eirenaeus-Philalethes
 ### A compound reasoning system on a single consumer GPU: same quality as its base model, 1.5x faster
 
 J.C. - Asastu · Buenos Aires · October 2026 · draft v0.1
@@ -13,7 +13,7 @@ J.C. - Asastu · Buenos Aires · October 2026 · draft v0.1
 
 ## Abstract
 
-EirenaeusPhilalethes V.1 (Eirenaeus) is a local compound AI system. It wraps an open 27B reasoning model with a small
+Eirenaeus-Philalethes (Eirenaeus) is a local compound AI system. It wraps an open 27B reasoning model with a small
 decision layer that runs on the CPU, a supervisor over the model's thinking, a pair of "hands" that operate the computer,
 and a verified memory. It does not change the model's weights.
 
