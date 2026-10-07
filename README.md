@@ -19,8 +19,8 @@ significant difference in quality** (McNemar exact, p ≥ 0.62 on every benchmar
 wall-clock time** (1.27x to 1.93x depending on the task). On tool calling (BFCL v4, 400 cases) it ties the base model
 in quality but gives no speed advantage, and I report that too.
 
-Underneath the numbers is a pattern rather than a product: a fast model that decides, beside a capable model that
-reasons, each improving the other (Section 1). Everything here was measured on one RTX GPU with 12 GB of VRAM. I report
+It is one local, measured instance of a known pattern: a fast model that decides, beside a capable model that reasons
+(Section 1). Everything here was measured on one RTX GPU with 12 GB of VRAM. I report
 what worked, what did not, and the mistakes in my own measurement that I caught along the way.
 
 **Key findings**
@@ -30,15 +30,22 @@ what worked, what did not, and the mistakes in my own measurement that I caught 
 4. **Method over luck.** One noisy run once suggested a loss that did not exist; every claim here is paired, at temperature 0.
 5. **Memory that finds the right thing.** On a frozen exam the exact memory reaches the model 14 times in 15, with no private leak.
 
-## 1. A different way to build
+## 1. A known pattern, measured locally
 
-The interesting part of this work is not one product. It is a way to arrange models: a small, fast model that decides,
-a *System 1* in the sense of fast and slow thinking, placed beside a capable reasoning model, a *System 2*, so that each
-makes the other better.
+Eirenaeus is one instance of a known pattern: a small, fast model that decides, a *System 1* in the sense of fast and
+slow thinking, beside a capable reasoning model, a *System 2*. The idea is not mine. This paper adds a packaged, local
+version of it and a paired measurement of what it costs and what it saves.
 
-Most systems scale one model, or route between whole models. Here neither model is replaced and neither is retrained to
-start: the reasoning model keeps its weights, and the fast model only ever *chooses* among options. What changes is the
-conversation between them.
+**Related work.** The closest system is the [vLLM Semantic Router](https://vllm.ai/blog/2025-09-11-semantic-router)
+([Wang et al., 2025](https://arxiv.org/abs/2510.08731)), where a ModernBERT classifier decides per request whether a
+served model should reason, reported at +10.2 points on MMLU-Pro with 47% less latency.
+[Reasoning routers for hybrid models](https://huggingface.co/blog/AmirMohseni/reasoning-router) (Hugging Face, 2025)
+make the same call with a 0.6B model. [Laya](https://huggingface.co/convaiinnovations/laya), the decision model used
+here, is presented by its authors as a System 1 for routing and escalation. Research pairs fast and slow parts in agents
+and planners ([SwiftSage](https://arxiv.org/abs/2305.17390), 2023; [System-1.x](https://arxiv.org/abs/2407.14414), 2024;
+[Dualformer](https://arxiv.org/abs/2410.09918), 2024) and adapts thinking budgets per request
+([SelfBudgeter](https://arxiv.org/abs/2505.11274), 2025; [DART](https://arxiv.org/abs/2606.23181) and
+[Ares](https://arxiv.org/abs/2603.07915), 2026).
 
 - **What the fast model gives the reasoning model.** It decides how much to think before any GPU work starts, stops
   thinking that loops, picks the few memories worth injecting, and can open the reply with one plain line while the
@@ -54,9 +61,10 @@ conversation between them.
 | Which three memories to inject | search calls made by the model | ~0.45 s once |
 | The opening line while it thinks | a blank screen for a minute | ~2 s, GPU |
 
-**Why it generalizes.** Nothing here depends on these two models. The reasoning model is untouched, so any capable open
-model can take the slow seat, and the fast seat learns from its own logged escalations, per user or per application. The
-results in Section 6 are this pattern applied to one pair of models on one consumer GPU.
+**What this work adds.** The pattern on one consumer GPU, packaged as a single model with an installer; a supervisor
+that stops looping thoughts; a verified memory (Section 7); the reasoning model's weights untouched; and a paired
+comparison at temperature 0 against the same model served alone (Section 6). Any capable open model can take the slow
+seat.
 
 ## 2. Motivation
 
