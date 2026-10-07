@@ -3,81 +3,111 @@
 
 J.C. - Asastu · Buenos Aires · October 2026 · draft v0.1
 
-**[Read the designed PDF (10 pages, figures)](WHITEPAPER.pdf)**
-
-![The hands: one order carried out on the real screen, in real time](assets/hands.gif)
-
-*The hands at work on my real screen, in real time (not sped up): one order, six steps, the sentence saved to a file on my desktop (shown at the end, read from disk). My desktop is blurred. Quality computer use in each application needs on-the-ground training (Section 8).*
+**[Read the designed PDF (11 pages, figures)](WHITEPAPER.pdf)**
 
 ---
 
 ## Abstract
 
 Eirenaeus-Philalethes (Eirenaeus) is a local compound AI system. It wraps an open 27B reasoning model with a small
-decision layer that runs on the CPU, a supervisor over the model's thinking, a pair of "hands" that operate the computer,
-and a verified memory. It does not change the model's weights.
+decision layer that runs on the CPU, a supervisor over the model's thinking, and a verified memory. It does not change
+the model's weights.
 
 On 677 problems from four public benchmarks (HumanEval+, MBPP+, AIME 2025, and a held-out mix of code and math), measured
 on the same machine at temperature 0 against the same base model served alone, Eirenaeus shows **no statistically
 significant difference in quality** (McNemar exact, p ≥ 0.62 on every benchmark) while being **1.51x faster in total
 wall-clock time** (1.27x to 1.93x depending on the task). On tool calling (BFCL v4, 400 cases) it ties the base model
-in quality but gives no speed advantage, and I report that too. It also does what the base model alone cannot: it
-operates a computer and completes real tasks checked against the world.
+in quality but gives no speed advantage, and I report that too.
 
-Everything here was measured on one RTX GPU with 12 GB of VRAM. I report what worked, what did not, and the mistakes in
-my own measurement that I caught along the way.
+Underneath the numbers is a pattern rather than a product: a fast model that decides, beside a capable model that
+reasons, each improving the other (Section 1). Everything here was measured on one RTX GPU with 12 GB of VRAM. I report
+what worked, what did not, and the mistakes in my own measurement that I caught along the way.
 
-## 1. Motivation
+**Key findings**
+1. **Same quality.** No benchmark shows a significant difference; on HumanEval+ Eirenaeus solves two more.
+2. **Faster where it matters.** The gain grows with how long the core would think: up to 1.93x on code.
+3. **No edge on tool calls.** Short calls need no thinking; the base model with thinking off is just as fast.
+4. **Method over luck.** One noisy run once suggested a loss that did not exist; every claim here is paired, at temperature 0.
+5. **Memory that finds the right thing.** On a frozen exam the exact memory reaches the model 14 times in 15, with no private leak.
+
+## 1. A different way to build
+
+The interesting part of this work is not one product. It is a way to arrange models: a small, fast model that decides,
+a *System 1* in the sense of fast and slow thinking, placed beside a capable reasoning model, a *System 2*, so that each
+makes the other better.
+
+Most systems scale one model, or route between whole models. Here neither model is replaced and neither is retrained to
+start: the reasoning model keeps its weights, and the fast model only ever *chooses* among options. What changes is the
+conversation between them.
+
+- **What the fast model gives the reasoning model.** It decides how much to think before any GPU work starts, stops
+  thinking that loops, picks the few memories worth injecting, and can open the reply with one plain line while the
+  reasoning runs. Each choice costs about half a second of CPU and no GPU tokens.
+- **What the reasoning model gives the fast model.** When the fast model is unsure, the reasoning model answers the same
+  question, and the answer is logged as a training label. Today the fast model is confident in 30% of routing decisions
+  (1,354 of 4,444); the rest fall back to a safe rule. Every escalation is material for the next version.
+
+| What System 1 decides today | Instead of | Cost |
+|---|---|---|
+| How much to think: none, brief, deep | always thinking at full budget | ~0.5 s, CPU |
+| Whether thinking is going in circles | running into the token cap | 0 ms, a rule |
+| Which three memories to inject | search calls made by the model | ~0.45 s once |
+| The opening line while it thinks | a blank screen for a minute | ~2 s, GPU |
+
+**Why it generalizes.** Nothing here depends on these two models. The reasoning model is untouched, so any capable open
+model can take the slow seat, and the fast seat learns from its own logged escalations, per user or per application. The
+results in Section 6 are this pattern applied to one pair of models on one consumer GPU.
+
+## 2. Motivation
 
 A strong open model on a consumer GPU spends most of its time thinking. Much of that thinking is either unnecessary (the
 answer was clear early) or misdirected (a simple request treated as a hard one). A system that decides *how much* to
-think before thinking, and notices *when* it can stop, should save time without losing answers.
+think, and notices *when* it can stop, should save time without losing answers. The question is narrow on purpose:
+**can an orchestration layer around a fixed model make it faster without making it worse?** The same weights, used
+better.
 
-The question I set out to answer honestly: **can an orchestration layer around a fixed model make it faster without
-making it worse?** Not "a better model", the same weights, a better way to use them.
+## 3. Architecture
 
-## 2. Architecture
-
-The system is named after the three alchemical principles plus the fifth essence. The names are a mnemonic, not a claim.
+The parts are named after the three alchemical principles and the fifth essence. The names are a mnemonic, not a claim.
 
 | Part | Role | Where it runs |
 |---|---|---|
-| **Mercury**: the decision layer (Laya, 421M parameters) | Reads each request in ~0.5 s and *selects*: how much to think, whether it is code, whether it needs live data, whether it is an order for the computer | CPU |
+| **Mercury**: the decision layer (Laya, 421M parameters) | Reads each request in ~0.5 s and *selects*: how much to think, whether it is code, carries images, or needs live data | CPU |
 | **Sulphur**: the reasoning core (Ternary-Bonsai-2-27B, PQ2_0, served by llama.cpp) | Thinks and answers | GPU, ~10 GB VRAM, ~65 tok/s |
-| **Salt**: the hands | Operate the computer: a headless browser by default, the real screen only when authorized | CPU |
-| **Quintessence**: memory | Its own small store, **inspired by [Engram](https://github.com/Gentleman-Programming/engram)** (Gentleman Programming) but injected rather than searched: chosen on the CPU, no model tokens spent. Validity follows [Dokimos](https://github.com/Jc-asastu/dokimos): every memory expires and is re-attested against its source | CPU |
+| **Salt**: the body | One OpenAI-compatible endpoint, one model id, a local chat page | CPU |
+| **Quintessence**: memory | Reads [Engram](https://github.com/Gentleman-Programming/engram) (Gentleman Programming); [Dokimos](https://github.com/Jc-asastu/dokimos) judges what is still valid; three memories are injected, never searched by the model (Section 7) | CPU |
 
-**Request flow.** A request arrives at an OpenAI-compatible gateway. Mercury picks a route (no thinking, brief, deep,
-hard) in under a second. A supervisor watches the core's thinking stream and stops loops ("let me reconsider…" three
-times) by asking for the answer with what it has. Requests whose answer *is* the reply (code, math) skip memory and are
-never offered the computer. Requests that bring the client's own tools take a light path: only Mercury's effort pick and
-a thinking cap.
+**Three paths.** The *reply path* covers code, math and conversation: the core thinks with the effort the decision layer
+chose, and a supervisor watching the thinking stream stops loops (the same doubt repeated three times) by asking for the
+answer with what it has. Requests whose answer is the reply itself never receive memory and are never offered a tool
+they do not need. The *light path* serves clients that bring their own tools (a browser, a file system, an application):
+only the effort pick and a thinking cap. The *instant path* answers greetings and short facts without thinking.
 
-## 3. Design principles
+## 4. Design principles
 
 1. **Selection over generation.** The decision layer never writes text; it chooses among options. Choosing is cheap
    (~0.4 s on a CPU) and checkable; every escalation to the core becomes a training label.
-2. **Listen, think, act.** Like a person: understand the request, think, and only then act on the computer. The hands
-   are a tool the reasoning asks for, never the first move.
+2. **Think as much as it pays.** Thinking is the expensive part. A greeting gets none, a hard problem gets the whole
+   budget, and a loop is stopped as soon as it repeats itself.
 3. **Measure before claiming.** Every claim in this paper comes from a results file, never from a console, never from a
-   single lucky run.
+   single lucky run, and always against a control.
 
-## 4. Evaluation methodology
+## 5. Evaluation methodology
 
 - **Same machine, same harness, same questions** for both arms: Eirenaeus versus the base model served alone with the
   authors' default settings (thinking at maximum effort).
 - **Temperature 0.** A single run at temperature 1.0 produced a "loss" on HumanEval+ (146 vs 156, p ≈ 0.002) that
   disappeared at temperature 0 (151 vs 154, p = 0.51). One sample per arm with randomness is not evidence.
 - **Paired comparison** with McNemar's exact test on discordant items. "Better" or "worse" only below p = 0.05.
-- **Held-out data.** 105 items development never used; for agentic work, a development split and a judge split that is
-  run once per milestone and never tuned on.
+- **Held-out data.** 105 items development never used; the memory exam keeps a frozen judge half, run once per milestone
+  and never tuned on.
 - **The control arm.** When Eirenaeus seems to win thanks to a setting, the base model is also run with that setting.
   If the base model matches, the credit goes to the setting, not to Eirenaeus (see tool calling).
 - **The GPU is not shared** during measurement; each step logs VRAM and any other GPU process.
 
-## 5. Results
+## 6. Results
 
-### 5.1 Reasoning: same quality, 1.51x faster
+### 6.1 Reasoning: same quality, 1.51x faster
 
 Temperature 0, RTX 12 GB, Eirenaeus v2 versus Ternary-Bonsai-2-27B alone.
 
@@ -93,7 +123,7 @@ The gain lives in long problems. On short ones Eirenaeus carries a fixed cost of
 (median 12.3 s vs 11.2 s on the held-out mix), and wins back far more on problems where the core would otherwise think
 for minutes.
 
-### 5.2 Tool calling: a tie, and no speed advantage
+### 6.2 Tool calling: a tie, and no speed advantage
 
 BFCL v4, AST categories (simple, multiple, parallel, parallel-multiple), 100 each, official checker, temperature 0.
 
@@ -110,13 +140,12 @@ belongs to the setting, not to Eirenaeus, which adds about 0.2 s per call. With 
 the date line in its prompt turned "this season" into the wrong year, a live-data note leaked into unrelated calls.
 The light path fixes quality; it does not create an advantage.
 
-### 5.3 Agentic work
+**Using a computer, through the client.** Eirenaeus does not operate the computer itself. A client that brings its own
+tools, such as a browser automation, a file system or an application connector, keeps them: Eirenaeus decides when and
+how to call them on the light path, and the client executes them with its own safeguards. The tie above is the quality
+of those calls.
 
-The base model alone cannot operate a computer, so there is no paired comparison to report here. My agentic
-evaluation, where every task is checked against the world rather than against the agent's own report, is in progress
-and will be published separately once it runs on a public benchmark.
-
-### 5.4 Vision, and the current version
+### 6.3 Vision, and the current version
 
 Images were the one place where Eirenaeus lost clearly. The cause sat in the decision layer, not in the core: it read
 only the words of a request, so an exam question with a figure looked like a short factual answer and got no thinking.
@@ -135,50 +164,65 @@ significant loss of set 1 becomes no significant difference, and no advantage ei
 
 A fix that broke the speed: the first v3 removed Eirenaeus's context from every direct answer, code included, and
 HumanEval+ fell to 0.66x the base model's speed (one problem: 691 s instead of 22). That context is what keeps the core's
-thinking short. Limited to images, the speed came back. MBPP+ and AIME 2025 were not re-run for v3; Section 5.1 is v2.
+thinking short. Limited to images, the speed came back. MBPP+ and AIME 2025 were not re-run for v3; Section 6.1 is v2.
 
-## 6. What did not work
+## 7. Memory: fewer, fresher memories, chosen for free
 
-I report these because they are as informative as the wins.
+Memory is written, judged and chosen by three different parts. **Engram** writes: each memory is structured (what, why,
+where, what was learned) and keyed by topic, so an evolving topic is updated instead of duplicated. **Dokimos** judges:
+every memory expires and is re-attested against its source, and an expired or replaced memory never reaches the model.
+**Eirenaeus** chooses: a privacy rule first, then the core rewrites the request as search keywords in both languages
+(about 0.45 s, once per conversation), then a word search on the CPU injects the top three memories, about 200 tokens.
+The model never spends a search call or a thought on remembering.
 
-- **A goal loop inside the planner prompt** (state the goal, check it, re-plan) changed the plans themselves: tasks that
-  already worked started failing, and a goal whose only evidence was a file name reported "checked" on a wrong answer.
-  A second version (goal from a separate call, content evidence only) showed no significant gain on held-out orders
-  at +61% time.
-- **A planner that reasons before acting** showed no gain on held-out orders at +77% time.
-- **Offering the computer to a request that does not need it** created loops: the model asked to "test" its code, each
-  refusal cost a new round of thinking, one problem took 47 minutes. Removing the tool removed the loop; that fix is
-  most of the HumanEval+ speedup.
-- **Fixing a problem that did not exist.** A single noisy run suggested a code-quality loss; I sent all code to maximum
-  thinking, which cost the code speedup. The temperature-0 rerun showed there had been no loss.
+| Frozen memory exam (author's work memories) | Before | Now |
+|---|---|---|
+| The exact memory that answers is on the card (judge half, 15 questions) | 9 / 15 | **14 / 15** |
+| Small talk and private questions get no memory (incl. 8 fresh probes) | 13 / 13 | **13 / 13** |
+| Expired memories on the card (without Dokimos: 2) | 0 | **0** |
+| Memories eligible after privacy, project and Dokimos filters (of 4,508) | 1,499 | 1,491 |
+| Cost of choosing the card | 0.12 s CPU | 0.45 s, once |
 
-## 7. Safety: the hands are denied by default
+The memories in this exam were written by the author's coding assistant, not by Eirenaeus; a memory Eirenaeus writes
+for itself is on the roadmap. Privacy is a rule over a user-defined list, never the model's judgement.
 
-During one benchmark the agent operated my real screen (it typed into the file explorer), because the
-benchmark client did not request headless mode and a generic word ("file") counted as a request for the computer.
-Every benchmark now forces headless mode, and the design moves from "allowed unless filtered" to **denied unless
-authorized**, through four checks: which client may use the hands at all, whether the reasoning asked for them, whether
-the real screen is needed and free, and an announcement or a question before the first action. A set of requests where
-the agent must *not* act has to produce zero actions on every change.
+## 8. What did not work
 
-## 8. Limitations and roadmap
+These are as informative as the wins, and each one changed the design.
 
-- One machine, one GPU class, one base model. The speedup is a property of this setup until measured elsewhere.
-- The supervisor and router were developed partly on public benchmarks; the held-out mix and the judge split are the
-  guard against tuning on the test, not a proof of its absence.
-- Computer use needs training on the ground: the hands carry out clear orders in a browser today; quality computer
-  use in a given application needs the decision layer post-trained on verified episodes in that application.
-- No advantage on images: on MMMU-Pro Eirenaeus is within noise of the base model (130 against 137, Section 5.4).
-- Next: early stop for code verified by running the code; the hands authorization layers; a public agentic
-  benchmark; post-training the decision layer per application from verified episodes.
+- **Offering a tool the request does not need.** Asked to write code, the model kept calling a tool to "test" it; each
+  refusal cost a new round of thinking, and one problem took 47 minutes. Removing the offer removed the loop.
+- **Fixing a problem that did not exist.** A noisy single run suggested a code-quality loss; sending all code to maximum
+  thinking cost the code speedup. The temperature-0 rerun showed there had been no loss.
+- **Rewriting the conversation.** A first "answer while thinking" put its opening line back into the conversation with an
+  instruction to correct itself; asked for a square root, the model invented another calculation. The opening line is
+  now a separate request, and the reasoning sees exactly the user's words.
+- **Privacy left to the model.** The core cannot know what is private to one person: when it wrote the memory keywords, a
+  private topic reached the card once. Privacy became a fixed rule, checked on 8 fresh probes: 8 of 8.
 
-## 9. Reproducibility
+## 9. Limitations
+
+- One machine, one GPU class, one base model. The speedup belongs to this setup until measured elsewhere.
+- Development touched public benchmarks. The held-out mix and judge split guard against overfitting to them.
+- Short requests carry overhead. The decision layer costs about half a second per request.
+- A small memory exam. Thirty questions on one person's work memories; a public memory benchmark comes next.
+- No advantage on images. On MMMU-Pro it is within noise of the base model (130 against 137).
+
+## 10. Roadmap
+
+- **Next: verified early stop for code.** Stop thinking as soon as the code passes the examples in its own prompt.
+- **Next: a memory it writes itself.** The decision layer flags what is worth keeping; the core writes it in the same
+  structured form; Dokimos judges it.
+- **Then: a public memory benchmark.** Long-term memory measured on conversations that are not the author's.
+- **Then: distillation.** Train System 1 on System 2's logged answers, so the fast model decides alone more often.
+
+## 11. Reproducibility
 
 - Hardware: one NVIDIA RTX GPU with 12 GB VRAM; consumer desktop CPU; Windows 11.
 - Base model: Ternary-Bonsai-2-27B PQ2_0 (llama.cpp, 64K context, reasoning budget 36,864, temperature 0 for evaluation).
-- Decision layer: Laya, 421M parameters, CPU.
-- Benchmarks: HumanEval+ and MBPP+ (EvalPlus v0.2.0), AIME 2025, BFCL v4 (official AST checker), held-out mix with a
-  fixed offset so development never saw it.
+- Decision layer: Laya, 421M parameters, CPU (revision 7b928d8 for the v3 runs, 55cf4c4 for the v2 table).
+- Benchmarks: HumanEval+ and MBPP+ (EvalPlus v0.2.0), AIME 2025, BFCL v4 (official AST checker), MMMU-Pro, held-out mix
+  with a fixed offset so development never saw it.
 - Every number in this paper comes from a per-item results file (id, pass, seconds, route), available on request.
 
 ## Acknowledgements
