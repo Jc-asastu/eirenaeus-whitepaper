@@ -19,7 +19,7 @@ significant difference in quality** (McNemar exact, p ≥ 0.62 on every benchmar
 wall-clock time** (1.27x to 1.93x depending on the task). On tool calling (BFCL v4, 400 cases) it ties the base model
 in quality but gives no speed advantage, and I report that too.
 
-It is one local, measured instance of a known pattern: a fast model that decides, beside a capable model that reasons
+It pairs a fast model that decides with a capable model that reasons, a design others have also explored
 (Section 1). Everything here was measured on one RTX GPU with 12 GB of VRAM. I report
 what worked, what did not, and the mistakes in my own measurement that I caught along the way.
 
@@ -30,11 +30,11 @@ what worked, what did not, and the mistakes in my own measurement that I caught 
 4. **Method over luck.** One noisy run once suggested a loss that did not exist; every claim here is paired, at temperature 0.
 5. **Memory that finds the right thing.** On a frozen exam the exact memory reaches the model 14 times in 15, with no private leak.
 
-## 1. A known pattern, measured locally
+## 1. System 1 beside System 2
 
-Eirenaeus is one instance of a known pattern: a small, fast model that decides, a *System 1* in the sense of fast and
-slow thinking, beside a capable reasoning model, a *System 2*. The idea is not mine. This paper adds a packaged, local
-version of it and a paired measurement of what it costs and what it saves.
+Eirenaeus pairs a small, fast model that decides, a *System 1* in the sense of fast and slow thinking, with a capable
+reasoning model, a *System 2*. I arrived at this design independently, and others have explored the same pattern. This
+paper adds a packaged, local version and a paired measurement of what it costs and saves.
 
 **Related work.** The closest system is the [vLLM Semantic Router](https://vllm.ai/blog/2025-09-11-semantic-router)
 ([Wang et al., 2025](https://arxiv.org/abs/2510.08731)), where a ModernBERT classifier decides per request whether a
@@ -59,7 +59,6 @@ and planners ([SwiftSage](https://arxiv.org/abs/2305.17390), 2023; [System-1.x](
 | How much to think: none, brief, deep | always thinking at full budget | ~0.5 s, CPU |
 | Whether thinking is going in circles | running into the token cap | 0 ms, a rule |
 | Which three memories to inject | search calls made by the model | ~0.45 s once |
-| The opening line while it thinks | a blank screen for a minute | ~2 s, GPU |
 
 **What this work adds.** The pattern on one consumer GPU, packaged as a single model with an installer; a supervisor
 that stops looping thoughts; a verified memory (Section 7); the reasoning model's weights untouched; and a paired
