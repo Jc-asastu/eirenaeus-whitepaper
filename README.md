@@ -1,7 +1,7 @@
 # Eirenaeus-Philalethes
 ### A compound reasoning system on a single consumer GPU: same quality as its base model, 1.5x faster
 
-J.C. - Asastu · Buenos Aires · October 2026 · draft v0.1
+J.C. - Asastu · Buenos Aires · October 2026
 
 **[Read the designed PDF (11 pages, figures)](WHITEPAPER.pdf)**
 
@@ -87,7 +87,7 @@ The parts are named after the three alchemical principles and the fifth essence.
 **Three paths.** The *reply path* covers code, math and conversation: the core thinks with the effort the decision layer
 chose, and a supervisor watching the thinking stream stops loops (the same doubt repeated three times) by asking for the
 answer with what it has. Requests whose answer is the reply itself never receive memory and are never offered a tool
-they do not need. The *light path* serves clients that bring their own tools (a browser, a file system, an application):
+they do not need. The *light path* serves clients that bring their own tools (a file system, an application connector):
 only the effort pick and a thinking cap. The *instant path* answers greetings and short facts without thinking.
 
 ## 4. Design principles
@@ -147,10 +147,9 @@ belongs to the setting, not to Eirenaeus, which adds about 0.2 s per call. With 
 the date line in its prompt turned "this season" into the wrong year, a live-data note leaked into unrelated calls.
 The light path fixes quality; it does not create an advantage.
 
-**Using a computer, through the client.** Eirenaeus does not operate the computer itself. A client that brings its own
-tools, such as a browser automation, a file system or an application connector, keeps them: Eirenaeus decides when and
-how to call them on the light path, and the client executes them with its own safeguards. The tie above is the quality
-of those calls.
+**Tools from the client.** Eirenaeus brings no tools of its own. A client that brings tools, such as a file system or
+an application connector, keeps them: Eirenaeus decides when and how to call them on the light path above, and the
+client executes them with its own safeguards. The tie measured here is the quality of those calls.
 
 ### 6.3 Vision, and the current version
 
@@ -193,21 +192,7 @@ The model never spends a search call or a thought on remembering.
 The memories in this exam were written by the author's coding assistant, not by Eirenaeus; a memory Eirenaeus writes
 for itself is on the roadmap. Privacy is a rule over a user-defined list, never the model's judgement.
 
-## 8. What did not work
-
-These are as informative as the wins, and each one changed the design.
-
-- **Offering a tool the request does not need.** Asked to write code, the model kept calling a tool to "test" it; each
-  refusal cost a new round of thinking, and one problem took 47 minutes. Removing the offer removed the loop.
-- **Fixing a problem that did not exist.** A noisy single run suggested a code-quality loss; sending all code to maximum
-  thinking cost the code speedup. The temperature-0 rerun showed there had been no loss.
-- **Rewriting the conversation.** A first "answer while thinking" put its opening line back into the conversation with an
-  instruction to correct itself; asked for a square root, the model invented another calculation. The opening line is
-  now a separate request, and the reasoning sees exactly the user's words.
-- **Privacy left to the model.** The core cannot know what is private to one person: when it wrote the memory keywords, a
-  private topic reached the card once. Privacy became a fixed rule, checked on 8 fresh probes: 8 of 8.
-
-## 9. Limitations
+## 8. Limitations
 
 - One machine, one GPU class, one base model. The speedup belongs to this setup until measured elsewhere.
 - Development touched public benchmarks. The held-out mix and judge split guard against overfitting to them.
@@ -215,7 +200,7 @@ These are as informative as the wins, and each one changed the design.
 - A small memory exam. Thirty questions on one person's work memories; a public memory benchmark comes next.
 - No advantage on images. On MMMU-Pro it is within noise of the base model (130 against 137).
 
-## 10. Roadmap
+## 9. Roadmap
 
 - **Next: verified early stop for code.** Stop thinking as soon as the code passes the examples in its own prompt.
 - **Next: a memory it writes itself.** The decision layer flags what is worth keeping; the core writes it in the same
@@ -223,7 +208,7 @@ These are as informative as the wins, and each one changed the design.
 - **Then: a public memory benchmark.** Long-term memory measured on conversations that are not the author's.
 - **Then: distillation.** Train System 1 on System 2's logged answers, so the fast model decides alone more often.
 
-## 11. Reproducibility
+## 10. Reproducibility
 
 - Hardware: one NVIDIA RTX GPU with 12 GB VRAM; consumer desktop CPU; Windows 11.
 - Base model: Ternary-Bonsai-2-27B PQ2_0 (llama.cpp, 64K context, reasoning budget 36,864, temperature 0 for evaluation).
